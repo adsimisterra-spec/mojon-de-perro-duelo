@@ -1,0 +1,381 @@
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const launchBtn = document.getElementById("launchBtn");
+
+// --- 1. CONFIGURACIÓN GENERAL ---
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+const GROUND_Y = 550; // Suelo sagrado
+const HOLE_Y = 150;   // Línea de meta
+const MAX_X = 3;       // Fallos para eliminación
+
+let estadoJuego = "reposo"; // "reposo", "vuelo", "carrera", "ronda_terminada"
+let carreraActiva = false;
+let indiceMalo = -1;
+let frames = 0;
+
+// --- 2. OBJETOS ---
+let pelota = { x: WIDTH / 2, y: HEIGHT - 110, vx: 0, vy: 0, radio: 12, activa: false };
+
+let niños = [];
+const coloresDefault = ["#ffffff", "#00ff00", "#ff00ff", "#ffff00", "#d3d3d3", "#a9a9a9", "#808080", "#696969"];
+
+// Crear 8 niños con diseño mejorado
+for (let i = 0; i < 8; i++) {
+    let tipo = "IA";
+    if (i === 0) tipo = "P1"; // Controlado por Flechas
+    if (i === 1) tipo = "P2"; // Controlado por WASD
+
+    niños.push({
+        id: i,
+        tipo: tipo,
+        x: 120 + i * 95,
+        y: GROUND_Y,
+        yBase: GROUND_Y,
+        vx: 0, vy: 0, // Velocidad para teclado suave
+        radio: 22, // Colisión
+        color: coloresDefault[i],
+        colorOriginal: coloresDefault[i],
+        esMalo: false,
+        llegoMeta: false,
+        quemado: false,
+        fallos: 0,
+        activo: true
+    });
+}
+
+// --- 3. INPUT HANDLER (TECLADO DUAL) ---
+let keys = {}; // Mapa de teclas presionadas
+
+window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ' && estadoJuego === "reposo") lanzarPelota(); // Espacio para lanzar
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+launchBtn.addEventListener('click', lanzarPelota);
+
+function manejarInputTeclado() {
+    niños.forEach(n => {
+        if (!n.activo || n.esMalo || n.quemado) return; // Malo o quemado no se mueven por teclado
+
+        // PLAYER 1 (Flechas)
+        if (n.tipo === "P1") {
+            n.vx = 0; n.vy = 0;
+            if (keys['ArrowLeft']) n.vx = -6;
+            if (keys['ArrowRight']) n.vx = 6;
+            if (keys['ArrowUp']) n.vy = -6;
+            if (keys['ArrowDown']) n.vy = 6;
+        }
+        // PLAYER 2 (WASD)
+        if (n.tipo === "P2") {
+            n.vx = 0; n.vy = 0;
+            if (keys['a']) n.vx = -6;
+            if (keys['d']) n.vx = 6;
+            if (keys['w']) n.vy = -6;
+            if (keys['s']) n.vy = 6;
+        }
+
+        // Aplicar movimiento y límites
+        n.x += n.vx;
+        n.y += n.vy;
+
+        // Límites de pantalla (Bounds)
+        if (n.x < n.radio) n.x = n.radio;
+        if (n.x > WIDTH - n.radio) n.x = WIDTH - n.radio;
+        if (n.y < HOLE_Y) n.y = HOLE_Y; // No subir de los huecos
+        if (n.y > GROUND_Y) n.y = GROUND_Y; // No bajar del suelo
+    });
+}
+
+// --- 4. LÓGICA DEL JUEGO ---
+
+function lanzarPelota() {
+    if (estadoJuego !== "reposo") return;
+
+    // A. Reiniciar ronda y actualizar colores
+    niños.forEach((n, idx) => {
+        if (n.activo) {
+            n.y = n.yBase;
+            n.esMalo = false;
+            n.llegoMeta = false;
+            n.quemado = false;
+            let inputCol = document.getElementById('color' + (idx + 1));
+            n.colorOriginal = inputCol ? inputCol.value : coloresDefault[idx];
+            n.color = n.colorOriginal;
+        }
+    });
+
+    // B. Pelota al botón
+    pelota.x = WIDTH / 2;
+    pelota.y = HEIGHT - 110;
+    pelota.activa = true;
+    estadoJuego = "vuelo";
+
+    // C. Elegir objetivo (Solo niños activos)
+    let niñosActivos = niños.filter(n => n.activo);
+    if (niñosActivos.length < 2) { alert("¡Juego Terminado! Reinicia para jugar."); return; }
+    
+    let target = niñosActivos[Math.floor(Math.random() * niñosActivos.length)];
+    indiceMalo = target.id;
+    let objetivoX = target.x;
+
+    // D. Física Potencia Vy -22.1
+    pelota.vy = -22.1;
+    let tiempoVuelo = 36;
+    pelota.vx = (objetivoX - pelota.x) / tiempoVuelo;
+}
+
+function actualizar() {
+    frames++;
+    manejarInputTeclado();
+
+    // FASE DE VUELO
+    if (estadoJuego === "vuelo" && pelota.activa) {
+        pelota.x += pelota.vx;
+        pelota.y += pelota.vy;
+        pelota.vy += 0.60; // Gravedad
+
+        // Impacto en Hueco
+        if (pelota.vy > 0 && pelota.y >= HOLE_Y) {
+            pelota.activa = false;
+            estadoJuego = "carrera";
+            carreraActiva = true;
+
+            // Transformar al Malo
+            let malo = niños[indiceMalo];
+            malo.esMalo = true;
+            malo.color = "#000000"; // Negro
+            
+            pelota.y = HOLE_Y;
+            pelota.x = malo.x;
+            pelota.vx = 0; pelota.vy = 0;
+        }
+    }
+
+    // FASE DE CARRERA (Lógica Mixta IA + Teclado)
+    if (estadoJuego === "carrera") {
+        let hayMovimientoAutomático = false;
+        let alguienLlegoASalvo = false;
+
+        niños.forEach(n => {
+            if (!n.activo || n.quemado) return;
+
+            if (n.esMalo) {
+                // EL MALO (IA): Sube a recoger la pelota
+                if (n.y > HOLE_Y) { n.y -= 8; hayMovimientoAutomático = true; }
+            } else {
+                // LOS BUENOS
+                // 1. Detección de Meta (Automática al tocar la línea)
+                if (!n.llegoMeta && n.y <= HOLE_Y + 10) {
+                    n.llegoMeta = true;
+                }
+
+                // 2. Movimiento IA (Para los que no son P1 ni P2)
+                if (n.tipo === "IA") {
+                    if (!n.llegoMeta) {
+                        n.y -= 7; // Sube
+                        hayMovimientoAutomático = true;
+                    } else if (n.y < n.yBase) {
+                        n.y += 5; // Baja
+                        hayMovimientoAutomático = true;
+                    }
+                } else {
+                    // Los Humanos (P1, P2) se mueven por teclado,
+                    // pero verificamos si llegaron a salvo.
+                    if (n.llegoMeta && n.y >= GROUND_Y - 5) {
+                        // El humano llegó a la base
+                    } else {
+                        hayMovimientoAutomático = true; // Siguen corriendo
+                    }
+                }
+
+                // 3. Lógica de Colisión (LA QUEMA)
+                // Usamos la pelota quieta en el hueco como punto de referencia del Malo
+                let dx = n.x - pelota.x;
+                let dy = n.y - pelota.y;
+                let distancia = Math.sqrt(dx*dx + dy*dy);
+
+                if (distancia < n.radio + pelota.radio && niños[indiceMalo].y <= HOLE_Y + 10) {
+                    // ¡QUEMADO! (Solo si el malo llegó a la pelota arriba)
+                    n.quemado = true;
+                    n.fallos++;
+                    n.color = "#e74c3c"; // Rojo quemado
+                    
+                    if (n.fallos >= MAX_X) {
+                        n.activo = false; // ELIMINADO
+                    }
+                }
+            }
+        });
+
+        // 4. Conteo de Fin de Ronda
+        // Verificamos si todos los buenos terminaron (quemados o a salvo)
+        let todosBuenosTerminaron = niños.filter(n => !n.esMalo && n.activo).every(n => n.quemado || (n.llegoMeta && n.y >= GROUND_Y - 5));
+
+        if (todosBuenosTerminaron) {
+            carreraActiva = false;
+            estadoJuego = "ronda_terminada";
+
+            // Regla de la X para el Malo: Si no quemó a NADIE, recibe X.
+            let alguienQuemado = niños.filter(n => !n.esMalo).some(n => n.quemado);
+            if (!alguienQuemado) {
+                niños[indiceMalo].fallos++;
+                if (niños[indiceMalo].fallos >= MAX_X) niños[indiceMalo].activo = false;
+            }
+
+            // Pequeña pausa antes de volver a empezar
+            setTimeout(() => {
+                estadoJuego = "reposo";
+            }, 2000);
+        }
+    } else if (estadoJuego === "reposo") {
+        pelota.x = WIDTH / 2;
+        pelota.y = HEIGHT - 110;
+    }
+}
+
+// --- 5. RENDER (DIBUJO MEJORADO) ---
+
+function dibujarJugador(n) {
+    if (!n.activo) return;
+
+    ctx.save();
+    ctx.translate(n.x, n.y);
+
+    // Color de piel y camiseta
+    let colorPiel = "#f1c40f";
+    let colorCamiseta = n.color;
+    if (n.esMalo) colorCamiseta = "#000000";
+
+    // CUERPO (Trapecio/Camiseta)
+    ctx.beginPath();
+    ctx.moveTo(-12, 10);
+    ctx.lineTo(12, 10);
+    ctx.lineTo(18, 35);
+    ctx.lineTo(-18, 35);
+    ctx.closePath();
+    ctx.fillStyle = colorCamiseta;
+    ctx.fill();
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // CABEZA (Círculo)
+    ctx.beginPath();
+    ctx.arc(0, -5, 15, 0, Math.PI * 2);
+    ctx.fillStyle = colorPiel;
+    ctx.fill();
+    ctx.stroke();
+
+    // Ojos (Animación simple)
+    ctx.fillStyle = "black";
+    let eyeOffset = 0;
+    if (carreraActiva && !n.esMalo) eyeOffset = n.llegoMeta ? 3 : -3; // Mirar arriba o abajo
+    ctx.beginPath(); ctx.arc(-5 + eyeOffset, -7, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5 + eyeOffset, -7, 3, 0, Math.PI * 2); ctx.fill();
+
+    // PIERNAS (Animación de correr)
+    let legCycle = 0;
+    if (carreraActiva) legCycle = Math.sin(frames * 0.2) * 10;
+    
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 4;
+    // Pierna Izq
+    ctx.beginPath(); ctx.moveTo(-8, 35); ctx.lineTo(-8 + legCycle, 50); ctx.stroke();
+    // Pierna Der
+    ctx.beginPath(); ctx.moveTo(8, 35); ctx.lineTo(8 - legCycle, 50); ctx.stroke();
+
+    // INDICADOR DE X (Vidas)
+    ctx.fillStyle = "#e74c3c"; // Rojo X
+    ctx.font = "bold 20px sans-serif";
+    ctx.textAlign = "center";
+    let Xs = "";
+    for(let i=0; i<n.fallos; i++) Xs += "X";
+    ctx.fillText(Xs, 0, -30);
+
+    // Etiqueta P1/P2
+    if (n.tipo !== "IA" && estadoJuego === "reposo") {
+        ctx.fillStyle = "white"; ctx.font = "12px sans-serif";
+        ctx.fillText(n.tipo, 0, 65);
+    }
+
+    ctx.restore();
+}
+
+function dibujar() {
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    // 1. Dibujar Suelo
+    ctx.fillStyle = "#654321"; // Marrón suelo
+    ctx.fillRect(0, GROUND_Y + 20, WIDTH, HEIGHT - GROUND_Y);
+
+    // 2. Dibujar Huecos
+    niños.forEach(n => {
+        if (!n.activo) return;
+        ctx.beginPath();
+        ctx.arc(n.x, HOLE_Y, 30, 0, Math.PI * 2);
+        ctx.fillStyle = "#1a1a1a";
+        ctx.fill();
+        ctx.strokeStyle = "#444";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        // Efecto profundidad
+        ctx.beginPath();
+        ctx.arc(n.x, HOLE_Y + 5, 25, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fill();
+    });
+
+    // 3. Dibujar Niños (Orden de profundidad)
+    niños.forEach(n => dibujarJugador(n));
+
+    // 4. Dibujar Botón
+    ctx.fillStyle = "#c0392b"; // Rojo botón
+    ctx.fillRect(WIDTH / 2 - 50, HEIGHT - 120, 100, 50);
+    ctx.fillStyle = "#e74c3c";
+    ctx.fillRect(WIDTH / 2 - 45, HEIGHT - 115, 90, 40);
+    ctx.fillStyle = "white"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("LANZAR", WIDTH/2, HEIGHT - 90);
+
+    // 5. Dibujar Pelota (Siempre encima)
+    if (pelota.activa || estadoJuego === "reposo") {
+        ctx.beginPath();
+        ctx.arc(pelota.x, pelota.y, pelota.radio, 0, Math.PI * 2);
+        ctx.fillStyle = "#f39c12"; // Naranja pelota
+        ctx.fill();
+        ctx.strokeStyle = "#333"; ctx.lineWidth = 2; ctx.stroke();
+        // Brillo
+        ctx.beginPath(); ctx.arc(pelota.x - 3, pelota.y - 3, 4, 0, Math.PI * 2); ctx.fillStyle = "rgba(255,255,255,0.3)"; ctx.fill();
+    }
+
+    // Overlay de Fin de Ronda
+    if (estadoJuego === "ronda_terminada") {
+        ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0,0,WIDTH,HEIGHT);
+        ctx.fillStyle = "white"; ctx.font = "bold 40px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText("¡RONDA TERMINADA!", WIDTH/2, HEIGHT/2);
+        ctx.font = "20px sans-serif";
+        ctx.fillText("Actualizando X...", WIDTH/2, HEIGHT/2 + 40);
+    }
+}
+
+// Actualizar HUD
+function actualizarHUD() {
+    let p1 = niños[0];
+    let p2 = niños[1];
+    let XsP1 = ""; for(let i=0; i<p1.fallos; i++) XsP1 += "X";
+    let XsP2 = ""; for(let i=0; i<p2.fallos; i++) XsP2 += "X";
+    
+    document.getElementById("p1-x").innerText = p1.activo ? (XsP1 || "0") : "ELIMINADO";
+    document.getElementById("p2-x").innerText = p2.activo ? (XsP2 || "0") : "ELIMINADO";
+}
+
+function bucle() {
+    actualizar();
+    dibujar();
+    actualizarHUD();
+    requestAnimationFrame(bucle);
+}
+
+// --- Iniciar ---
+bucle();
