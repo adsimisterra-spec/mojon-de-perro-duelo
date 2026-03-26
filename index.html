@@ -2,32 +2,24 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mojón de Perro - Modo Duelo X</title>
+    <title>Mojón de Perro - Duelo</title>
     <style>
-        body { background-color: #333; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        canvas { background: linear-gradient(#6ac, #49a); border: 6px solid #555; border-radius: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); cursor: none; }
-        .controls { margin-top: 15px; display: flex; gap: 15px; align-items: center; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; }
-        .hud { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; pointer-events: none; }
-        .player-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        body { background-color: #222; display: flex; flex-direction: column; align-items: center; color: white; font-family: Arial; }
+        canvas { border: 5px solid #444; background: linear-gradient(to bottom, #5dade2, #2e86c1); box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .controls { margin-top: 20px; display: flex; gap: 20px; align-items: center; }
+        button { background-color: #e74c3c; color: white; border: none; padding: 15px 30px; font-size: 18px; cursor: pointer; border-radius: 5px; font-weight: bold; }
+        button:hover { background-color: #c0392b; }
     </style>
 </head>
 <body>
-
-    <div class="hud">
-        <div><span class="player-dot" style="background:#fff;"></span>P1 (Flechas): <span id="p1-x"></span></div>
-        <div><span class="player-dot" style="background:#0f0;"></span>P2 (WASD): <span id="p2-x"></span></div>
-    </div>
-
+    <h1>Mojón de Perro: El Duelo</h1>
     <canvas id="gameCanvas" width="900" height="650"></canvas>
-
+    
     <div class="controls">
-        <label>Colores P1-P4:</label>
-        <input type="color" id="color1" value="#ffffff">
-        <input type="color" id="color2" value="#00ff00">
-        <input type="color" id="color3" value="#ff00ff">
-        <input type="color" id="color4" value="#ffff00">
-        <button id="launchBtn" style="padding: 10px 25px; font-size: 16px; cursor: pointer; border-radius: 5px; border: none; background: #e74c3c; color: white; font-weight: bold;">LANZAR (Espacio)</button>
+        <button id="btnLanzar">LANZAR (Espacio)</button>
+        <div>
+            <p>P1: Flechas | P2: WASD</p>
+        </div>
     </div>
 
     <script src="script.js"></script>
